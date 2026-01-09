@@ -1,52 +1,65 @@
 <!DOCTYPE html>
-<html lang="cs">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Quantum LaTeX Flashcards - Fixed Math</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum LaTeX Flashcards</title>
     <script>
         window.MathJax = {
-            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
-            startup: { pageReady: () => { return MathJax.startup.defaultPageReady(); } }
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] }
         };
     </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
-        :root { --bg: #0f111a; --card: #1a1c29; --text: #e0e6ed; --accent: #00f2ff; }
+        :root { --bg: #0f111a; --card: #1a1c29; --text: #e0e6ed; --accent: #00f2ff; --pink: #ff00ff; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        #app { max-width: 850px; width: 100%; background: var(--card); padding: 30px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
-        h1 { color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 10px; }
-        #content { font-size: 1.3rem; line-height: 2; margin: 25px 0; }
-        /* Styl pro skrytý vzorec nebo slovo */
-        .gap { background: #333; color: transparent !important; border-bottom: 2px solid var(--accent); cursor: help; user-select: none; transition: all 0.2s; }
-        .gap * { visibility: hidden; } /* Schová i MathJax render uvnitř */
+        #app { max-width: 800px; width: 100%; background: var(--card); padding: 30px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        h1 { color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 10px; margin-top: 0; }
+        #content { font-size: 1.3rem; line-height: 2; margin: 25px 0; min-height: 120px; }
         
-        .gap.revealed { background: transparent; color: #ff00ff !important; border-bottom: none; }
-        .gap.revealed * { visibility: visible; color: #ff00ff !important; }
+        /* Gaps Logic */
+        .gap { background: #333; color: transparent !important; border-bottom: 2px solid var(--accent); cursor: help; user-select: none; border-radius: 3px; }
+        .gap * { visibility: hidden; } 
+        .gap.revealed { background: transparent; color: var(--pink) !important; border-bottom: none; }
+        .gap.revealed * { visibility: visible; color: var(--pink) !important; }
 
-        .controls { display: flex; gap: 10px; margin-top: 20px; }
-        button { flex: 1; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1.1rem; }
+        .controls { display: flex; gap: 10px; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }
         #btn-next { background: var(--accent); color: #000; }
         #btn-know { background: #4caf50; color: white; display: none; }
         #btn-dont { background: #f44336; color: white; display: none; }
         
-        table { width: 100%; margin-top: 30px; border-collapse: collapse; font-size: 0.85rem; }
-        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        .sync-section { margin-top: 40px; border-top: 1px solid #333; padding-top: 20px; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; background: #000; color: #00f2ff; border: 1px solid #444; border-radius: 4px; box-sizing: border-box; }
+        
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+        th { color: var(--accent); }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <h1 id="title">Načítání...</h1>
+    <h1 id="title">Loading...</h1>
     <div id="content"></div>
     
     <div class="controls">
-        <button id="btn-next" onclick="revealGaps()">Pokračovat</button>
-        <button id="btn-know" onclick="updateScore(1)">Umím</button>
-        <button id="btn-dont" onclick="updateScore(-1)">Neumím</button>
+        <button id="btn-next" onclick="reveal()">Continue</button>
+        <button id="btn-know" onclick="updateScore(1)">I Know This</button>
+        <button id="btn-dont" onclick="updateScore(-1)">I Don't Know</button>
     </div>
 
-    <table id="stats-table">
-        <thead><tr><th>Téma</th><th>Slov</th><th>K</th><th>Frakce</th></tr></thead>
+    <div class="sync-section">
+        <h3>Cloud Sync</h3>
+        <input type="text" id="sync-url" placeholder="Paste Apps Script URL (ends in /exec)">
+        <div style="display:flex; gap:10px;">
+            <button onclick="saveCloud()" style="background:#2196F3; color:white; flex:1">Save to Cloud</button>
+            <button onclick="loadCloud()" style="background:#9c27b0; color:white; flex:1">Load from Cloud</button>
+        </div>
+    </div>
+
+    <table id="stats">
+        <thead><tr><th>Topic</th><th>Words</th><th>Known</th><th>Success %</th></tr></thead>
         <tbody></tbody>
     </table>
 </div>
@@ -57,12 +70,14 @@
     let fileList = [];
 
     async function init() {
-        const res = await fetch('data.json');
-        fileList = await res.json();
-        await loadNew();
+        try {
+            const res = await fetch('data.json');
+            fileList = await res.json();
+            await nextFile();
+        } catch (e) { document.getElementById('content').innerText = "Error: data.json missing."; }
     }
 
-    async function loadNew() {
+    async function nextFile() {
         let minF = Infinity;
         let candidates = [];
 
@@ -75,45 +90,34 @@
 
         currentPath = candidates[Math.floor(Math.random() * candidates.length)];
         const text = await (await fetch(currentPath)).text();
-        renderPage(text);
+        render(text);
     }
 
-    function renderPage(text) {
+    function render(text) {
         const titleMatch = text.match(/\\popis\{([^}]+)\}/);
         db[currentPath].title = titleMatch ? titleMatch[1] : currentPath;
+        let body = text.replace(/\\popis\{[^}]+\}/, '').trim();
         
-        let bodyText = text.replace(/\\popis\{[^}]+\}/, '').trim();
-        
-        // TOKENIZER: Klíčová část. Rozdělí na slova NEBO bloky $...$
-        let tokens = bodyText.match(/(\$[^\$]+\$|[^\s]+)/g) || [];
+        // Tokenizer: Words or $...$ blocks
+        let tokens = body.match(/(\$[^\$]+\$|[^\s]+)/g) || [];
         db[currentPath].total = tokens.length;
 
         let indices = Array.from(Array(tokens.length).keys()).sort(() => Math.random() - 0.5);
         let gapped = indices.slice(0, db[currentPath].known);
 
-        let html = tokens.map((t, i) => {
-            if (gapped.includes(i)) {
-                return `<span class="gap">${t}</span>`;
-            }
-            return t;
-        }).join(' ');
+        document.getElementById('content').innerHTML = tokens.map((t, i) => 
+            gapped.includes(i) ? `<span class="gap">${t}</span>` : t
+        ).join(' ');
 
         document.getElementById('title').innerText = db[currentPath].title;
-        document.getElementById('content').innerHTML = html;
-        
-        // Schovat tlačítka umím/neumím
-        uiState(false);
+        setUI(false);
         updateTable();
-
-        // MATHJAX TRIGGER: Vykreslit nově přidané vzorce
-        if (window.MathJax) {
-            MathJax.typesetPromise();
-        }
+        if (window.MathJax) MathJax.typesetPromise();
     }
 
-    function revealGaps() {
+    function reveal() {
         document.querySelectorAll('.gap').forEach(el => el.classList.add('revealed'));
-        uiState(true);
+        setUI(true);
         if (window.MathJax) MathJax.typesetPromise();
     }
 
@@ -121,23 +125,38 @@
         let e = db[currentPath];
         e.known = Math.max(1, Math.min(e.total, e.known + v));
         localStorage.setItem('q_db', JSON.stringify(db));
-        loadNew();
+        nextFile();
     }
 
-    function uiState(revealed) {
+    function setUI(revealed) {
         document.getElementById('btn-next').style.display = revealed ? 'none' : 'block';
         document.getElementById('btn-know').style.display = revealed ? 'block' : 'none';
         document.getElementById('btn-dont').style.display = revealed ? 'block' : 'none';
     }
 
-    function updateTable() {
-        const tb = document.querySelector('#stats-table tbody');
-        tb.innerHTML = '';
-        for (let p in db) {
-            let info = db[p];
-            let f = info.total > 0 ? (info.known / info.total).toFixed(2) : "0.00";
-            tb.innerHTML += `<tr><td>${info.title}</td><td>${info.total}</td><td>${info.known}</td><td>${f}</td></tr>`;
+    async function saveCloud() {
+        const url = document.getElementById('sync-url').value;
+        if(!url) return alert("Enter URL!");
+        await fetch(url, { method: 'POST', mode: 'no-cors', body: localStorage.getItem('q_db') });
+        alert("Syncing... check your Sheet in a moment.");
+    }
+
+    async function loadCloud() {
+        const url = document.getElementById('sync-url').value;
+        const data = await (await fetch(url)).text();
+        if (data.startsWith('{')) {
+            localStorage.setItem('q_db', data);
+            location.reload();
         }
+    }
+
+    function updateTable() {
+        const tb = document.querySelector('#stats tbody');
+        tb.innerHTML = Object.keys(db).map(p => {
+            const e = db[p];
+            const f = e.total > 0 ? (e.known/e.total*100).toFixed(0) : 0;
+            return `<tr><td>${e.title}</td><td>${e.total}</td><td>${e.known}</td><td>${f}%</td></tr>`;
+        }).join('');
     }
 
     init();
