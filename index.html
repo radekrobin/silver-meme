@@ -2,43 +2,55 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>Quantum LaTeX Learning</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum LaTeX Flashcards</title>
     <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        #container { max-width: 800px; width: 100%; background: #1e1e1e; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        h1 { color: #00f2ff; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        #content { font-size: 1.2rem; line-height: 1.6; margin: 20px 0; min-height: 100px; }
-        .gap { background: #333; color: #333; border-bottom: 2px solid #00f2ff; padding: 0 5px; cursor: default; }
+        :root { --bg: #0f111a; --card: #1a1c29; --text: #e0e6ed; --accent: #00f2ff; --correct: #4caf50; --wrong: #f44336; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; margin: 0; padding: 20px; }
+        #app { max-width: 800px; width: 100%; }
+        .card { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; border: 1px solid #333; }
+        h1 { color: var(--accent); margin-top: 0; font-size: 1.5rem; }
+        #content { font-size: 1.25rem; line-height: 1.8; margin-bottom: 2rem; min-height: 80px; }
+        .gap { background: #333; color: transparent; border-bottom: 2px solid var(--accent); padding: 0 4px; border-radius: 3px; cursor: default; transition: 0.2s; }
         .gap.revealed { background: transparent; color: #ff00ff; border-bottom: none; }
-        .controls { display: flex; gap: 10px; margin-top: 20px; }
-        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        #btn-next { background: #00f2ff; color: #000; }
-        #btn-know { background: #4caf50; color: white; display: none; }
-        #btn-dont { background: #f44336; color: white; display: none; }
-        #stats { margin-top: 20px; font-size: 0.8rem; color: #888; width: 100%; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+        .controls { display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }
+        #btn-next { background: var(--accent); color: #000; }
+        #btn-know { background: var(--correct); color: white; display: none; }
+        #btn-dont { background: var(--wrong); color: white; display: none; }
+        button:hover { opacity: 0.8; transform: translateY(-1px); }
+        .stats-container { width: 100%; overflow-x: auto; margin-top: 30px; }
+        table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 0.9rem; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: left; }
+        th { background: #252839; color: var(--accent); }
     </style>
 </head>
 <body>
 
-<div id="container">
-    <h1 id="title">Načítání...</h1>
-    <div id="content"></div>
-
-    <div class="controls">
-        <button id="btn-next" onclick="reveal()">Pokračovat</button>
-        <button id="btn-know" onclick="updateScore(1)">Umím</button>
-        <button id="btn-dont" onclick="updateScore(-1)">Neumím</button>
+<div id="app">
+    <div class="card">
+        <h1 id="title">Načítání...</h1>
+        <div id="content">Vyberte soubory v data.json pro začátek.</div>
+        
+        <div class="controls">
+            <button id="btn-next" onclick="revealGaps()">Pokračovat</button>
+            <button id="btn-know" onclick="updateProgress(1)">Umím</button>
+            <button id="btn-dont" onclick="updateProgress(-1)">Neumím</button>
+        </div>
     </div>
 
-    <div id="stats">
-        <h3>Statistiky (Table)</h3>
+    <div class="stats-container">
+        <h3>Statistiky souborů</h3>
         <table id="stats-table">
             <thead>
-                <tr><th>Soubor</th><th>Slov</th><th>Umím</th><th>Frakce</th></tr>
+                <tr>
+                    <th>Soubor</th>
+                    <th>Slov (T)</th>
+                    <th>Známých (K)</th>
+                    <th>Frakce (K/T)</th>
+                </tr>
             </thead>
             <tbody></tbody>
         </table>
@@ -46,30 +58,32 @@
 </div>
 
 <script>
-    let currentFile = null;
-    let db = JSON.parse(localStorage.getItem('quantum_db')) || {};
+    let currentPath = null;
     let fileList = [];
+    // Databáze v localStorage
+    let db = JSON.parse(localStorage.getItem('quantum_learning_db')) || {};
 
-    // 1. Initialize - Fetch the list of files
     async function init() {
         try {
             const response = await fetch('data.json');
             fileList = await response.json();
-            await loadNextFile();
+            if (fileList.length === 0) throw new Error();
+            await pickNextFile();
         } catch (e) {
-            document.getElementById('content').innerHTML = "Chyba: data.json nebyl nalezen.";
+            document.getElementById('content').innerText = "Chyba: data.json nenalezen nebo je prázdný.";
         }
     }
 
-    // 2. Load the file with the lowest fraction
-    async function loadNextFile() {
-        let candidates = [];
+    async function pickNextFile() {
         let minFraction = Infinity;
+        let candidates = [];
 
         for (let path of fileList) {
-            if (!db[path]) db[path] = { known: 1, total: 0, title: '???' };
-            let fraction = db[path].known / (db[path].total || 1);
+            if (!db[path]) db[path] = { known: 1, total: 0, title: path };
             
+            // Logika: Pokud total = 0, frakce je 0 (vaše podmínka)
+            let fraction = db[path].total > 0 ? (db[path].known / db[path].total) : 0;
+
             if (fraction < minFraction) {
                 minFraction = fraction;
                 candidates = [path];
@@ -78,84 +92,83 @@
             }
         }
 
-        const chosenPath = candidates[Math.floor(Math.random() * candidates.length)];
-        const res = await fetch(chosenPath);
+        currentPath = candidates[Math.floor(Math.random() * candidates.length)];
+        const res = await fetch(currentPath);
         const text = await res.text();
-        parseAndDisplay(chosenPath, text);
+        displayFile(text);
     }
 
-    // 3. Parse LaTeX and handle logic
-    function parseAndDisplay(path, text) {
-        currentFile = path;
-        
-        // Extract \popis{...}
+    function displayFile(text) {
+        // 1. Získání názvu z \popis{}
         const titleMatch = text.match(/\\popis\{([^}]+)\}/);
-        const title = titleMatch ? titleMatch[1] : path;
-        db[path].title = title;
+        const title = titleMatch ? titleMatch[1] : currentPath;
+        db[currentPath].title = title;
 
-        // Strip the \popis tag to get pure content
-        let content = text.replace(/\\popis\{[^}]+\}/, '').trim();
-        
-        // Tokenize: Matches formulas $...$ OR single words
-        let tokens = content.match(/(\$[^\$]+\$|[^\s]+)/g);
-        db[path].total = tokens.length;
+        // 2. Příprava obsahu (odstranění \popis)
+        let cleanText = text.replace(/\\popis\{[^}]+\}/, '').trim();
 
-        // Determine which tokens to hide
-        let k = db[path].known;
-        let indices = Array.from(Array(tokens.length).keys());
-        indices.sort(() => Math.random() - 0.5);
-        let hiddenIndices = indices.slice(0, k);
+        // 3. Tokenizace (Slova nebo celé $...$ bloky)
+        let tokens = cleanText.match(/(\$[^\$]+\$|[^\s]+)/g) || [];
+        db[currentPath].total = tokens.length;
 
-        let htmlContent = tokens.map((token, i) => {
-            if (hiddenIndices.includes(i)) {
-                return `<span class="gap" data-answer="${token}">------</span>`;
+        // 4. Výběr náhodných mezer podle počtu "known"
+        let indices = Array.from(Array(tokens.length).keys()).sort(() => Math.random() - 0.5);
+        let gapIndices = indices.slice(0, db[currentPath].known);
+
+        let html = tokens.map((token, i) => {
+            if (gapIndices.includes(i)) {
+                return `<span class="gap" data-val="${token}">------</span>`;
             }
             return token;
         }).join(' ');
 
         document.getElementById('title').innerText = title;
-        document.getElementById('content').innerHTML = htmlContent;
+        document.getElementById('content').innerHTML = html;
         
-        // UI Reset
+        // Reset tlačítek
         document.getElementById('btn-next').style.display = 'block';
         document.getElementById('btn-know').style.display = 'none';
         document.getElementById('btn-dont').style.display = 'none';
-        
-        renderTable();
-        MathJax.typeset();
+
+        updateStatsTable();
+        if (window.MathJax) MathJax.typeset();
     }
 
-    function reveal() {
+    function revealGaps() {
         document.querySelectorAll('.gap').forEach(el => {
-            el.innerHTML = el.getAttribute('data-answer');
+            el.innerHTML = el.getAttribute('data-val');
             el.classList.add('revealed');
         });
         document.getElementById('btn-next').style.display = 'none';
         document.getElementById('btn-know').style.display = 'block';
         document.getElementById('btn-dont').style.display = 'block';
-        MathJax.typeset();
+        if (window.MathJax) MathJax.typeset();
     }
 
-    function updateScore(change) {
-        let entry = db[currentFile];
-        entry.known = Math.max(1, Math.min(entry.total, entry.known + change));
-        
-        localStorage.setItem('quantum_db', JSON.stringify(db));
-        loadNextFile();
+    function updateProgress(change) {
+        let entry = db[currentPath];
+        if (entry.total > 0) {
+            entry.known = Math.max(1, Math.min(entry.total, entry.known + change));
+        } else {
+            entry.known = 1;
+        }
+
+        localStorage.setItem('quantum_learning_db', JSON.stringify(db));
+        pickNextFile();
     }
 
-    function renderTable() {
+    function updateStatsTable() {
         const tbody = document.querySelector('#stats-table tbody');
         tbody.innerHTML = '';
         for (let path in db) {
-            let entry = db[path];
-            let row = `<tr>
-                <td>${entry.title}</td>
-                <td>${entry.total}</td>
-                <td>${entry.known}</td>
-                <td>${(entry.known / (entry.total || 1)).toFixed(2)}</td>
+            let info = db[path];
+            let frac = info.total > 0 ? (info.known / info.total).toFixed(2) : "0.00";
+            tbody.innerHTML += `<tr>
+                <td>${info.title}</td>
+                <td>${info.total}</td>
+                <td>${info.known}</td>
+                <td>${frac}</td>
             </tr>`;
-            tbody.innerHTML += row;
         }
     }
 
