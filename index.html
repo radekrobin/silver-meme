@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Bloch Sphere Simulator</title>
+    <style>
+        body { margin: 0; background: #050505; color: white; font-family: sans-serif; overflow: hidden; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; border: 1px solid #333; }
+        canvas { display: block; }
+        h1 { margin: 0 0 10px 0; font-size: 18px; color: #00f2ff; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1>Bloch Sphere Sim</h1>
+        <p>Qubit State: |ψ⟩</p>
+        <label>Theta (θ): </label><input type="range" id="theta" min="0" max="3.14" step="0.01" value="1.57"><br>
+        <label>Phi (φ): </label><input type="range" id="phi" min="0" max="6.28" step="0.01" value="0">
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // 1. Setup Scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 2. Create Bloch Sphere
+        const geometry = new THREE.SphereGeometry(2, 32, 32);
+        const material = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true, transparent: true, opacity: 0.3 });
+        const sphere = new THREE.Mesh(geometry, material);
+        scene.add(sphere);
+
+        // 3. Add Axes
+        const axesHelper = new THREE.AxesHelper(3);
+        scene.add(axesHelper);
+
+        // 4. The Qubit Vector (The "Pointer")
+        const points = [];
+        points.push(new THREE.Vector3(0, 0, 0));
+        points.push(new THREE.Vector3(0, 2, 0));
+        const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x00f2ff, linewidth: 3 });
+        const vector = new THREE.Line(lineGeom, lineMat);
+        scene.add(vector);
+
+        camera.position.z = 5;
+
+        // 5. Animation & Interaction
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Get values from UI
+            const theta = document.getElementById('theta').value;
+            const phi = document.getElementById('phi').value;
+
+            // Map Spherical to Cartesian coordinates
+            // Standard: x = r*sin(th)*cos(ph), y = r*sin(th)*sin(ph), z = r*cos(th)
+            const r = 2;
+            vector.geometry.attributes.position.setXYZ(1, 
+                r * Math.sin(theta) * Math.cos(phi),
+                r * Math.cos(theta), // We swap Y and Z for visual vertical alignment
+                r * Math.sin(theta) * Math.sin(phi)
+            );
+            vector.geometry.attributes.position.needsUpdate = true;
+
+            scene.rotation.y += 0.005; // Slow rotation
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
