@@ -1,80 +1,166 @@
 <!DOCTYPE html>
-<html>
+<html lang="cs">
 <head>
-    <title>3D Bloch Sphere Simulator</title>
+    <meta charset="UTF-8">
+    <title>Quantum LaTeX Learning</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
-        body { margin: 0; background: #050505; color: white; font-family: sans-serif; overflow: hidden; }
-        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; border: 1px solid #333; }
-        canvas { display: block; }
-        h1 { margin: 0 0 10px 0; font-size: 18px; color: #00f2ff; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #container { max-width: 800px; width: 100%; background: #1e1e1e; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #00f2ff; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        #content { font-size: 1.2rem; line-height: 1.6; margin: 20px 0; min-height: 100px; }
+        .gap { background: #333; color: #333; border-bottom: 2px solid #00f2ff; padding: 0 5px; cursor: default; }
+        .gap.revealed { background: transparent; color: #ff00ff; border-bottom: none; }
+        .controls { display: flex; gap: 10px; margin-top: 20px; }
+        button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        #btn-next { background: #00f2ff; color: #000; }
+        #btn-know { background: #4caf50; color: white; display: none; }
+        #btn-dont { background: #f44336; color: white; display: none; }
+        #stats { margin-top: 20px; font-size: 0.8rem; color: #888; width: 100%; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <h1>Bloch Sphere Sim</h1>
-        <p>Qubit State: |ψ⟩</p>
-        <label>Theta (θ): </label><input type="range" id="theta" min="0" max="3.14" step="0.01" value="1.57"><br>
-        <label>Phi (φ): </label><input type="range" id="phi" min="0" max="6.28" step="0.01" value="0">
+
+<div id="container">
+    <h1 id="title">Načítání...</h1>
+    <div id="content"></div>
+
+    <div class="controls">
+        <button id="btn-next" onclick="reveal()">Pokračovat</button>
+        <button id="btn-know" onclick="updateScore(1)">Umím</button>
+        <button id="btn-dont" onclick="updateScore(-1)">Neumím</button>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script>
-        // 1. Setup Scene
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    <div id="stats">
+        <h3>Statistiky (Table)</h3>
+        <table id="stats-table">
+            <thead>
+                <tr><th>Soubor</th><th>Slov</th><th>Umím</th><th>Frakce</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
 
-        // 2. Create Bloch Sphere
-        const geometry = new THREE.SphereGeometry(2, 32, 32);
-        const material = new THREE.MeshBasicMaterial({ color: 0x444444, wireframe: true, transparent: true, opacity: 0.3 });
-        const sphere = new THREE.Mesh(geometry, material);
-        scene.add(sphere);
+<script>
+    let currentFile = null;
+    let db = JSON.parse(localStorage.getItem('quantum_db')) || {};
+    let fileList = [];
 
-        // 3. Add Axes
-        const axesHelper = new THREE.AxesHelper(3);
-        scene.add(axesHelper);
-
-        // 4. The Qubit Vector (The "Pointer")
-        const points = [];
-        points.push(new THREE.Vector3(0, 0, 0));
-        points.push(new THREE.Vector3(0, 2, 0));
-        const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
-        const lineMat = new THREE.LineBasicMaterial({ color: 0x00f2ff, linewidth: 3 });
-        const vector = new THREE.Line(lineGeom, lineMat);
-        scene.add(vector);
-
-        camera.position.z = 5;
-
-        // 5. Animation & Interaction
-        function animate() {
-            requestAnimationFrame(animate);
-
-            // Get values from UI
-            const theta = document.getElementById('theta').value;
-            const phi = document.getElementById('phi').value;
-
-            // Map Spherical to Cartesian coordinates
-            // Standard: x = r*sin(th)*cos(ph), y = r*sin(th)*sin(ph), z = r*cos(th)
-            const r = 2;
-            vector.geometry.attributes.position.setXYZ(1, 
-                r * Math.sin(theta) * Math.cos(phi),
-                r * Math.cos(theta), // We swap Y and Z for visual vertical alignment
-                r * Math.sin(theta) * Math.sin(phi)
-            );
-            vector.geometry.attributes.position.needsUpdate = true;
-
-            scene.rotation.y += 0.005; // Slow rotation
-            renderer.render(scene, camera);
+    // 1. Initialize - Fetch the list of files
+    async function init() {
+        try {
+            const response = await fetch('data.json');
+            fileList = await response.json();
+            await loadNextFile();
+        } catch (e) {
+            document.getElementById('content').innerHTML = "Chyba: data.json nebyl nalezen.";
         }
-        animate();
+    }
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+    // 2. Load the file with the lowest fraction
+    async function loadNextFile() {
+        let candidates = [];
+        let minFraction = Infinity;
+
+        for (let path of fileList) {
+            if (!db[path]) db[path] = { known: 1, total: 0, title: '???' };
+            let fraction = db[path].known / (db[path].total || 1);
+            
+            if (fraction < minFraction) {
+                minFraction = fraction;
+                candidates = [path];
+            } else if (fraction === minFraction) {
+                candidates.push(path);
+            }
+        }
+
+        const chosenPath = candidates[Math.floor(Math.random() * candidates.length)];
+        const res = await fetch(chosenPath);
+        const text = await res.text();
+        parseAndDisplay(chosenPath, text);
+    }
+
+    // 3. Parse LaTeX and handle logic
+    function parseAndDisplay(path, text) {
+        currentFile = path;
+        
+        // Extract \popis{...}
+        const titleMatch = text.match(/\\popis\{([^}]+)\}/);
+        const title = titleMatch ? titleMatch[1] : path;
+        db[path].title = title;
+
+        // Strip the \popis tag to get pure content
+        let content = text.replace(/\\popis\{[^}]+\}/, '').trim();
+        
+        // Tokenize: Matches formulas $...$ OR single words
+        let tokens = content.match(/(\$[^\$]+\$|[^\s]+)/g);
+        db[path].total = tokens.length;
+
+        // Determine which tokens to hide
+        let k = db[path].known;
+        let indices = Array.from(Array(tokens.length).keys());
+        indices.sort(() => Math.random() - 0.5);
+        let hiddenIndices = indices.slice(0, k);
+
+        let htmlContent = tokens.map((token, i) => {
+            if (hiddenIndices.includes(i)) {
+                return `<span class="gap" data-answer="${token}">------</span>`;
+            }
+            return token;
+        }).join(' ');
+
+        document.getElementById('title').innerText = title;
+        document.getElementById('content').innerHTML = htmlContent;
+        
+        // UI Reset
+        document.getElementById('btn-next').style.display = 'block';
+        document.getElementById('btn-know').style.display = 'none';
+        document.getElementById('btn-dont').style.display = 'none';
+        
+        renderTable();
+        MathJax.typeset();
+    }
+
+    function reveal() {
+        document.querySelectorAll('.gap').forEach(el => {
+            el.innerHTML = el.getAttribute('data-answer');
+            el.classList.add('revealed');
         });
-    </script>
+        document.getElementById('btn-next').style.display = 'none';
+        document.getElementById('btn-know').style.display = 'block';
+        document.getElementById('btn-dont').style.display = 'block';
+        MathJax.typeset();
+    }
+
+    function updateScore(change) {
+        let entry = db[currentFile];
+        entry.known = Math.max(1, Math.min(entry.total, entry.known + change));
+        
+        localStorage.setItem('quantum_db', JSON.stringify(db));
+        loadNextFile();
+    }
+
+    function renderTable() {
+        const tbody = document.querySelector('#stats-table tbody');
+        tbody.innerHTML = '';
+        for (let path in db) {
+            let entry = db[path];
+            let row = `<tr>
+                <td>${entry.title}</td>
+                <td>${entry.total}</td>
+                <td>${entry.known}</td>
+                <td>${(entry.known / (entry.total || 1)).toFixed(2)}</td>
+            </tr>`;
+            tbody.innerHTML += row;
+        }
+    }
+
+    init();
+</script>
+
 </body>
 </html>
