@@ -2,178 +2,145 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quantum LaTeX Flashcards</title>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <title>Quantum LaTeX Flashcards - Fixed Math</title>
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            startup: { pageReady: () => { return MathJax.startup.defaultPageReady(); } }
+        };
+    </script>
     <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
-        :root { --bg: #0f111a; --card: #1a1c29; --text: #e0e6ed; --accent: #00f2ff; --correct: #4caf50; --wrong: #f44336; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; margin: 0; padding: 20px; }
-        #app { max-width: 800px; width: 100%; }
-        .card { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px; border: 1px solid #333; }
-        h1 { color: var(--accent); margin-top: 0; font-size: 1.5rem; }
-        #content { font-size: 1.25rem; line-height: 1.8; margin-bottom: 2rem; min-height: 80px; }
-        .gap { background: #333; color: transparent; border-bottom: 2px solid var(--accent); padding: 0 4px; border-radius: 3px; cursor: default; transition: 0.2s; }
-        .gap.revealed { background: transparent; color: #ff00ff; border-bottom: none; }
-        .controls { display: flex; gap: 10px; }
-        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 1rem; }
+        :root { --bg: #0f111a; --card: #1a1c29; --text: #e0e6ed; --accent: #00f2ff; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        #app { max-width: 850px; width: 100%; background: var(--card); padding: 30px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+        h1 { color: var(--accent); border-bottom: 1px solid #333; padding-bottom: 10px; }
+        #content { font-size: 1.3rem; line-height: 2; margin: 25px 0; }
+        /* Styl pro skrytý vzorec nebo slovo */
+        .gap { background: #333; color: transparent !important; border-bottom: 2px solid var(--accent); cursor: help; user-select: none; transition: all 0.2s; }
+        .gap * { visibility: hidden; } /* Schová i MathJax render uvnitř */
+        
+        .gap.revealed { background: transparent; color: #ff00ff !important; border-bottom: none; }
+        .gap.revealed * { visibility: visible; color: #ff00ff !important; }
+
+        .controls { display: flex; gap: 10px; margin-top: 20px; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1.1rem; }
         #btn-next { background: var(--accent); color: #000; }
-        #btn-know { background: var(--correct); color: white; display: none; }
-        #btn-dont { background: var(--wrong); color: white; display: none; }
-        button:hover { opacity: 0.8; transform: translateY(-1px); }
-        .stats-container { width: 100%; overflow-x: auto; margin-top: 30px; }
-        table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 0.9rem; }
+        #btn-know { background: #4caf50; color: white; display: none; }
+        #btn-dont { background: #f44336; color: white; display: none; }
+        
+        table { width: 100%; margin-top: 30px; border-collapse: collapse; font-size: 0.85rem; }
         th, td { border: 1px solid #333; padding: 10px; text-align: left; }
-        th { background: #252839; color: var(--accent); }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div class="card">
-        <h1 id="title">Načítání...</h1>
-        <div id="content">Vyberte soubory v data.json pro začátek.</div>
-        
-        <div class="controls">
-            <button id="btn-next" onclick="revealGaps()">Pokračovat</button>
-            <button id="btn-know" onclick="updateProgress(1)">Umím</button>
-            <button id="btn-dont" onclick="updateProgress(-1)">Neumím</button>
-        </div>
+    <h1 id="title">Načítání...</h1>
+    <div id="content"></div>
+    
+    <div class="controls">
+        <button id="btn-next" onclick="revealGaps()">Pokračovat</button>
+        <button id="btn-know" onclick="updateScore(1)">Umím</button>
+        <button id="btn-dont" onclick="updateScore(-1)">Neumím</button>
     </div>
 
-    <div class="stats-container">
-        <h3>Statistiky souborů</h3>
-        <table id="stats-table">
-            <thead>
-                <tr>
-                    <th>Soubor</th>
-                    <th>Slov (T)</th>
-                    <th>Známých (K)</th>
-                    <th>Frakce (K/T)</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-    </div>
+    <table id="stats-table">
+        <thead><tr><th>Téma</th><th>Slov</th><th>K</th><th>Frakce</th></tr></thead>
+        <tbody></tbody>
+    </table>
 </div>
 
 <script>
-    let currentPath = null;
+    let currentPath = '';
+    let db = JSON.parse(localStorage.getItem('q_db')) || {};
     let fileList = [];
-    // Databáze v localStorage
-    let db = JSON.parse(localStorage.getItem('quantum_learning_db')) || {};
 
     async function init() {
-        try {
-            const response = await fetch('data.json');
-            fileList = await response.json();
-            if (fileList.length === 0) throw new Error();
-            await pickNextFile();
-        } catch (e) {
-            document.getElementById('content').innerText = "Chyba: data.json nenalezen nebo je prázdný.";
-        }
+        const res = await fetch('data.json');
+        fileList = await res.json();
+        await loadNew();
     }
 
-    async function pickNextFile() {
-        let minFraction = Infinity;
+    async function loadNew() {
+        let minF = Infinity;
         let candidates = [];
 
-        for (let path of fileList) {
+        fileList.forEach(path => {
             if (!db[path]) db[path] = { known: 1, total: 0, title: path };
-            
-            // Logika: Pokud total = 0, frakce je 0 (vaše podmínka)
-            let fraction = db[path].total > 0 ? (db[path].known / db[path].total) : 0;
-
-            if (fraction < minFraction) {
-                minFraction = fraction;
-                candidates = [path];
-            } else if (fraction === minFraction) {
-                candidates.push(path);
-            }
-        }
+            let f = db[path].total > 0 ? (db[path].known / db[path].total) : 0;
+            if (f < minF) { minF = f; candidates = [path]; }
+            else if (f === minF) { candidates.push(path); }
+        });
 
         currentPath = candidates[Math.floor(Math.random() * candidates.length)];
-        const res = await fetch(currentPath);
-        const text = await res.text();
-        displayFile(text);
+        const text = await (await fetch(currentPath)).text();
+        renderPage(text);
     }
 
-    function displayFile(text) {
-        // 1. Získání názvu z \popis{}
+    function renderPage(text) {
         const titleMatch = text.match(/\\popis\{([^}]+)\}/);
-        const title = titleMatch ? titleMatch[1] : currentPath;
-        db[currentPath].title = title;
-
-        // 2. Příprava obsahu (odstranění \popis)
-        let cleanText = text.replace(/\\popis\{[^}]+\}/, '').trim();
-
-        // 3. Tokenizace (Slova nebo celé $...$ bloky)
-        let tokens = cleanText.match(/(\$[^\$]+\$|[^\s]+)/g) || [];
+        db[currentPath].title = titleMatch ? titleMatch[1] : currentPath;
+        
+        let bodyText = text.replace(/\\popis\{[^}]+\}/, '').trim();
+        
+        // TOKENIZER: Klíčová část. Rozdělí na slova NEBO bloky $...$
+        let tokens = bodyText.match(/(\$[^\$]+\$|[^\s]+)/g) || [];
         db[currentPath].total = tokens.length;
 
-        // 4. Výběr náhodných mezer podle počtu "known"
         let indices = Array.from(Array(tokens.length).keys()).sort(() => Math.random() - 0.5);
-        let gapIndices = indices.slice(0, db[currentPath].known);
+        let gapped = indices.slice(0, db[currentPath].known);
 
-        let html = tokens.map((token, i) => {
-            if (gapIndices.includes(i)) {
-                return `<span class="gap" data-val="${token}">------</span>`;
+        let html = tokens.map((t, i) => {
+            if (gapped.includes(i)) {
+                return `<span class="gap">${t}</span>`;
             }
-            return token;
+            return t;
         }).join(' ');
 
-        document.getElementById('title').innerText = title;
+        document.getElementById('title').innerText = db[currentPath].title;
         document.getElementById('content').innerHTML = html;
         
-        // Reset tlačítek
-        document.getElementById('btn-next').style.display = 'block';
-        document.getElementById('btn-know').style.display = 'none';
-        document.getElementById('btn-dont').style.display = 'none';
+        // Schovat tlačítka umím/neumím
+        uiState(false);
+        updateTable();
 
-        updateStatsTable();
-        if (window.MathJax) MathJax.typeset();
+        // MATHJAX TRIGGER: Vykreslit nově přidané vzorce
+        if (window.MathJax) {
+            MathJax.typesetPromise();
+        }
     }
 
     function revealGaps() {
-        document.querySelectorAll('.gap').forEach(el => {
-            el.innerHTML = el.getAttribute('data-val');
-            el.classList.add('revealed');
-        });
-        document.getElementById('btn-next').style.display = 'none';
-        document.getElementById('btn-know').style.display = 'block';
-        document.getElementById('btn-dont').style.display = 'block';
-        if (window.MathJax) MathJax.typeset();
+        document.querySelectorAll('.gap').forEach(el => el.classList.add('revealed'));
+        uiState(true);
+        if (window.MathJax) MathJax.typesetPromise();
     }
 
-    function updateProgress(change) {
-        let entry = db[currentPath];
-        if (entry.total > 0) {
-            entry.known = Math.max(1, Math.min(entry.total, entry.known + change));
-        } else {
-            entry.known = 1;
-        }
-
-        localStorage.setItem('quantum_learning_db', JSON.stringify(db));
-        pickNextFile();
+    function updateScore(v) {
+        let e = db[currentPath];
+        e.known = Math.max(1, Math.min(e.total, e.known + v));
+        localStorage.setItem('q_db', JSON.stringify(db));
+        loadNew();
     }
 
-    function updateStatsTable() {
-        const tbody = document.querySelector('#stats-table tbody');
-        tbody.innerHTML = '';
-        for (let path in db) {
-            let info = db[path];
-            let frac = info.total > 0 ? (info.known / info.total).toFixed(2) : "0.00";
-            tbody.innerHTML += `<tr>
-                <td>${info.title}</td>
-                <td>${info.total}</td>
-                <td>${info.known}</td>
-                <td>${frac}</td>
-            </tr>`;
+    function uiState(revealed) {
+        document.getElementById('btn-next').style.display = revealed ? 'none' : 'block';
+        document.getElementById('btn-know').style.display = revealed ? 'block' : 'none';
+        document.getElementById('btn-dont').style.display = revealed ? 'block' : 'none';
+    }
+
+    function updateTable() {
+        const tb = document.querySelector('#stats-table tbody');
+        tb.innerHTML = '';
+        for (let p in db) {
+            let info = db[p];
+            let f = info.total > 0 ? (info.known / info.total).toFixed(2) : "0.00";
+            tb.innerHTML += `<tr><td>${info.title}</td><td>${info.total}</td><td>${info.known}</td><td>${f}</td></tr>`;
         }
     }
 
     init();
 </script>
-
 </body>
 </html>
